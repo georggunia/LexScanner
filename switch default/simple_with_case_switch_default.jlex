@@ -1,3 +1,8 @@
+// Alternative JFlex spec enabling case/switch/default as keywords.
+// NOTE: To build this variant you must first add CASE, SWITCH, DEFAULT
+// to sym.java (and optionally extend P2.java to print them). The Makefile
+// still uses simple.jlex by default; switch it manually if needed.
+
 import java_cup.runtime.*; // defines the Symbol class
 
 // The generated scanner will return a Symbol for each token that it finds.
@@ -30,21 +35,20 @@ class IntLitTokenVal extends TokenVal {
 }
 
 class IdTokenVal extends TokenVal {
-	String idVal;
-	IdTokenVal(int l, int c, String val) {
-		super(l, c);
-		idVal = val;
-	}
+    String idVal;
+    IdTokenVal(int l, int c, String val) {
+        super(l, c);
+        idVal = val;
+    }
 }
 
 class StrLitTokenVal extends TokenVal {
-	String strVal;
-	StrLitTokenVal(int l, int c, String val) {
-		super(l, c);
-		strVal = val;
-	}
+    String strVal;
+    StrLitTokenVal(int l, int c, String val) {
+        super(l, c);
+        strVal = val;
+    }
 }
-
 
 // The following class is used to keep track of the character number at which
 // the current token starts on its line.
@@ -81,14 +85,14 @@ private int commentStartLine = 0;
 private int commentStartChar = 0;
 
 private void updateCharNum(String text) {
-	for (int i = 0; i < text.length(); i++) {
-		char ch = text.charAt(i);
-		if (ch == '\n' || ch == '\r') {
-			CharNum.num = 1;
-		} else {
-			CharNum.num++;
-		}
-	}
+    for (int i = 0; i < text.length(); i++) {
+        char ch = text.charAt(i);
+        if (ch == '\n' || ch == '\r') {
+            CharNum.num = 1;
+        } else {
+            CharNum.num++;
+        }
+    }
 }
 %}
 
@@ -111,94 +115,97 @@ private void updateCharNum(String text) {
 // String literals
 <YYINITIAL>\"        { strBuf.setLength(0); strStartLine = yyline + 1; strStartChar = CharNum.num; updateCharNum(yytext()); yybegin(STR); }
 <STR>\"  { // closing quote
-			Symbol S = new Symbol(sym.STRINGLITERAL, new StrLitTokenVal(strStartLine, strStartChar, strBuf.toString()));
-			updateCharNum(yytext());
-			yybegin(YYINITIAL);
-			return S;
-		  }
+            Symbol S = new Symbol(sym.STRINGLITERAL, new StrLitTokenVal(strStartLine, strStartChar, strBuf.toString()));
+            updateCharNum(yytext());
+            yybegin(YYINITIAL);
+            return S;
+          }
 <STR>\\[nt'\"\\] { // valid escapes
-			String t = yytext();
-			char esc = t.charAt(1);
-			char val;
-			switch (esc) {
-			  case 'n': val = '\n'; break;
-			  case 't': val = '\t'; break;
-			  case '\'': val = '\''; break;
-			  case '"': val = '"'; break;
-			  case '\\': val = '\\'; break;
-			  default: val = esc; // should not hit
-			}
-			strBuf.append(val);
-			updateCharNum(t);
-		  }
+            String t = yytext();
+            char esc = t.charAt(1);
+            char val;
+            switch (esc) {
+              case 'n': val = '\n'; break;
+              case 't': val = '\t'; break;
+              case '\'': val = '\''; break;
+              case '"': val = '"'; break;
+              case '\\': val = '\\'; break;
+              default: val = esc; // should not hit
+            }
+            strBuf.append(val);
+            updateCharNum(t);
+          }
 <STR>\\. { // bad escape
-			Errors.fatal(yyline + 1, CharNum.num, "bad escape in string: " + yytext());
-			updateCharNum(yytext());
-		  }
+            Errors.fatal(yyline + 1, CharNum.num, "bad escape in string: " + yytext());
+            updateCharNum(yytext());
+          }
 <STR>[^\\\"\n]+ { strBuf.append(yytext()); updateCharNum(yytext()); }
 <STR>(\r\n|[\r\n]) { // newline in string -> unterminated
-						Errors.fatal(strStartLine, strStartChar, "unterminated string literal");
-			updateCharNum(yytext());
-			yybegin(YYINITIAL);
-		  }
+            Errors.fatal(strStartLine, strStartChar, "unterminated string literal");
+            updateCharNum(yytext());
+            yybegin(YYINITIAL);
+          }
 <STR><<EOF>> { Errors.fatal(strStartLine, strStartChar, "unterminated string literal"); return new Symbol(sym.EOF); }
 
-// Keywords and identifiers
+// Keywords and identifiers (includes case/switch/default)
 System\.out\.println { int c = CharNum.num; Symbol S = new Symbol(sym.PRINT, new TokenVal(yyline+1, c)); updateCharNum(yytext()); return S; }
 
-(public|class|static|int|boolean|String|void|true|false|if|else|while|do|return) {
-	int c = CharNum.num;
-	String t = yytext();
-	Symbol S;
-	if (t.equals("public")) S = new Symbol(sym.PUBLIC, new TokenVal(yyline+1, c));
-	else if (t.equals("class")) S = new Symbol(sym.CLASS, new TokenVal(yyline+1, c));
-	else if (t.equals("static")) S = new Symbol(sym.STATIC, new TokenVal(yyline+1, c));
-	else if (t.equals("int")) S = new Symbol(sym.INT, new TokenVal(yyline+1, c));
-	else if (t.equals("boolean")) S = new Symbol(sym.BOOLEAN, new TokenVal(yyline+1, c));
-	else if (t.equals("String")) S = new Symbol(sym.STRING, new TokenVal(yyline+1, c));
-	else if (t.equals("void")) S = new Symbol(sym.VOID, new TokenVal(yyline+1, c));
-	else if (t.equals("true")) S = new Symbol(sym.TRUE, new TokenVal(yyline+1, c));
-	else if (t.equals("false")) S = new Symbol(sym.FALSE, new TokenVal(yyline+1, c));
-	else if (t.equals("if")) S = new Symbol(sym.IF, new TokenVal(yyline+1, c));
-	else if (t.equals("else")) S = new Symbol(sym.ELSE, new TokenVal(yyline+1, c));
-	else if (t.equals("while")) S = new Symbol(sym.WHILE, new TokenVal(yyline+1, c));
-	else if (t.equals("do")) S = new Symbol(sym.DO, new TokenVal(yyline+1, c));
-	else /* return */ S = new Symbol(sym.RETURN, new TokenVal(yyline+1, c));
-	updateCharNum(yytext());
-	return S;
+(public|class|static|int|boolean|String|void|true|false|if|else|while|do|return|case|switch|default) {
+    int c = CharNum.num;
+    String t = yytext();
+    Symbol S;
+    if (t.equals("public")) S = new Symbol(sym.PUBLIC, new TokenVal(yyline+1, c));
+    else if (t.equals("class")) S = new Symbol(sym.CLASS, new TokenVal(yyline+1, c));
+    else if (t.equals("static")) S = new Symbol(sym.STATIC, new TokenVal(yyline+1, c));
+    else if (t.equals("int")) S = new Symbol(sym.INT, new TokenVal(yyline+1, c));
+    else if (t.equals("boolean")) S = new Symbol(sym.BOOLEAN, new TokenVal(yyline+1, c));
+    else if (t.equals("String")) S = new Symbol(sym.STRING, new TokenVal(yyline+1, c));
+    else if (t.equals("void")) S = new Symbol(sym.VOID, new TokenVal(yyline+1, c));
+    else if (t.equals("true")) S = new Symbol(sym.TRUE, new TokenVal(yyline+1, c));
+    else if (t.equals("false")) S = new Symbol(sym.FALSE, new TokenVal(yyline+1, c));
+    else if (t.equals("if")) S = new Symbol(sym.IF, new TokenVal(yyline+1, c));
+    else if (t.equals("else")) S = new Symbol(sym.ELSE, new TokenVal(yyline+1, c));
+    else if (t.equals("while")) S = new Symbol(sym.WHILE, new TokenVal(yyline+1, c));
+    else if (t.equals("do")) S = new Symbol(sym.DO, new TokenVal(yyline+1, c));
+    else if (t.equals("return")) S = new Symbol(sym.RETURN, new TokenVal(yyline+1, c));
+    else if (t.equals("case")) S = new Symbol(sym.CASE, new TokenVal(yyline+1, c));
+    else if (t.equals("switch")) S = new Symbol(sym.SWITCH, new TokenVal(yyline+1, c));
+    else /* default */ S = new Symbol(sym.DEFAULT, new TokenVal(yyline+1, c));
+    updateCharNum(yytext());
+    return S;
 }
 
 [A-Za-z][A-Za-z0-9_]* {
-	int c = CharNum.num;
-	String id = yytext();
-	Symbol S = new Symbol(sym.ID, new IdTokenVal(yyline+1, c, id));
-	updateCharNum(id);
-	return S;
+    int c = CharNum.num;
+    String id = yytext();
+    Symbol S = new Symbol(sym.ID, new IdTokenVal(yyline+1, c, id));
+    updateCharNum(id);
+    return S;
 }
 
 // Integer literals with overflow handling
 {DIGIT}+   {
-			int c = CharNum.num;
-			String t = yytext();
-			long lv;
-			try {
-				lv = Long.parseLong(t);
-			} catch (NumberFormatException e) {
-				lv = Long.MAX_VALUE;
-			}
-			int val;
-			if (lv > Integer.MAX_VALUE) {
-				Errors.warn(yyline+1, c, "integer literal too large; value capped to 2147483647");
-				val = Integer.MAX_VALUE;
-			} else {
-				val = (int) lv;
-			}
-			Symbol S = new Symbol(sym.INTLITERAL,
-								  new IntLitTokenVal(yyline+1, c, val)
-								 );
-			updateCharNum(t);
-			return S;
-		   }
+            int c = CharNum.num;
+            String t = yytext();
+            long lv;
+            try {
+                lv = Long.parseLong(t);
+            } catch (NumberFormatException e) {
+                lv = Long.MAX_VALUE;
+            }
+            int val;
+            if (lv > Integer.MAX_VALUE) {
+                Errors.warn(yyline+1, c, "integer literal too large; value capped to 2147483647");
+                val = Integer.MAX_VALUE;
+            } else {
+                val = (int) lv;
+            }
+            Symbol S = new Symbol(sym.INTLITERAL,
+                                  new IntLitTokenVal(yyline+1, c, val)
+                                 );
+            updateCharNum(t);
+            return S;
+           }
 
 // Operators and delimiters (longest match first)
 "&&"   { int c=CharNum.num; Symbol S=new Symbol(sym.AND, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
@@ -229,6 +236,6 @@ System\.out\.println { int c = CharNum.num; Symbol S = new Symbol(sym.PRINT, new
 
 // Anything else illegal
 .        { Errors.fatal(yyline+1, CharNum.num,
-			 "ignoring illegal character: " + yytext());
-			updateCharNum(yytext());
-		   }
+             "ignoring illegal character: " + yytext());
+            updateCharNum(yytext());
+           }
