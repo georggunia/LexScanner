@@ -29,6 +29,22 @@ class IntLitTokenVal extends TokenVal {
     }
 }
 
+class IdTokenVal extends TokenVal {
+	String idVal;
+	IdTokenVal(int l, int c, String val) {
+		super(l, c);
+		idVal = val;
+	}
+}
+
+class StrLitTokenVal extends TokenVal {
+	String strVal;
+	StrLitTokenVal(int l, int c, String val) {
+		super(l, c);
+		strVal = val;
+	}
+}
+
 
 // The following class is used to keep track of the character number at which
 // the current token starts on its line.
@@ -45,6 +61,8 @@ WHITESPACE=	[\ \t\n]
 %implements java_cup.runtime.Scanner
 %function next_token
 %type java_cup.runtime.Symbol
+%state STR
+%state COMMENT
 
 // Tell JLex what to do on end-of-file
 %eofval{
@@ -54,26 +72,163 @@ return new Symbol(sym.EOF);
 // Turn on line counting
 %line
 
+%{
+// code to be included in the scanner class
+private StringBuilder strBuf = new StringBuilder();
+private int strStartLine = 0;
+private int strStartChar = 0;
+private int commentStartLine = 0;
+private int commentStartChar = 0;
+
+private void updateCharNum(String text) {
+	for (int i = 0; i < text.length(); i++) {
+		char ch = text.charAt(i);
+		if (ch == '\n') {
+			CharNum.num = 1;
+		} else {
+			CharNum.num++;
+		}
+	}
+}
+%}
+
 %%
 
-{DIGIT}+   {// NOTE: the following computation of the integer value does NOT
-	    //       check for overflow.  This must be changed.
-	    int val = Integer.parseInt(yytext());
-	    Symbol S = new Symbol(sym.INTLITERAL,
-			          new IntLitTokenVal(yyline+1, CharNum.num, val)
-				 );
-	    CharNum.num += yytext().length();
-	    return S;
-	   }
+// Whitespace (spaces, tabs, newlines)
+{WHITESPACE}+  { updateCharNum(yytext()); }
 
-{WHITESPACE}+  {CharNum.num += yytext().length();}
+// Single-line comments
+"//"[^\n]*   { updateCharNum(yytext()); }
 
-"+"	   {Symbol S = new Symbol(sym.PLUS, new TokenVal(yyline+1, CharNum.num));
-	    CharNum.num++;
-	    return S;
-	   }
-	    
-.	   {Errors.fatal(yyline+1, CharNum.num,
+// Multi-line comments (not nested)
+"/*"          { commentStartLine = yyline + 1; commentStartChar = CharNum.num; yybegin(COMMENT); }
+<COMMENT>[^*\n]+   { updateCharNum(yytext()); }
+<COMMENT>"*"+[^*/\n]* { updateCharNum(yytext()); }
+<COMMENT>\n { updateCharNum(yytext()); }
+<COMMENT>"*/" { updateCharNum(yytext()); yybegin(YYINITIAL); }
+<COMMENT><<EOF>> { Errors.fatal(commentStartLine, commentStartChar, "unterminated comment"); }
+
+// String literals
+\"        { strBuf.setLength(0); strStartLine = yyline + 1; strStartChar = CharNum.num; updateCharNum(yytext()); yybegin(STR); }
+<STR>\"  { // closing quote
+			Symbol S = new Symbol(sym.STRINGLITERAL, new StrLitTokenVal(strStartLine, strStartChar, strBuf.toString()));
+			updateCharNum(yytext());
+			yybegin(YYINITIAL);
+			return S;
+		  }
+<STR>\\[nt'\"\\] { // valid escapes
+			String t = yytext();
+			char esc = t.charAt(1);
+			char val;
+			switch (esc) {
+			  case 'n': val = '\n'; break;
+			  case 't': val = '\t'; break;
+			  case '\'': val = '\''; break;
+			  case '"': val = '"'; break;
+			  case '\\': val = '\\'; break;
+			  default: val = esc; // should not hit
+			}
+			strBuf.append(val);
+			updateCharNum(t);
+		  }
+<STR>\\. { // bad escape
+			Errors.fatal(yyline + 1, CharNum.num, "bad escape in string: " + yytext());
+			updateCharNum(yytext());
+		  }
+<STR>[^\\\"\n]+ { strBuf.append(yytext()); updateCharNum(yytext()); }
+<STR>\n { // newline in string -> unterminated
+			Errors.fatal(strStartLine, strStartChar, "unterminated string literal");
+			updateCharNum(yytext());
+			yybegin(YYINITIAL);
+		  }
+<STR><<EOF>> { Errors.fatal(strStartLine, strStartChar, "unterminated string literal (eof)"); }
+
+// Keywords and identifiers
+System\.out\.println { int c = CharNum.num; Symbol S = new Symbol(sym.PRINT, new TokenVal(yyline+1, c)); updateCharNum(yytext()); return S; }
+
+(public|class|static|int|boolean|String|void|true|false|if|else|while|do|return) {
+	int c = CharNum.num;
+	String t = yytext();
+	Symbol S;
+	if (t.equals("public")) S = new Symbol(sym.PUBLIC, new TokenVal(yyline+1, c));
+	else if (t.equals("class")) S = new Symbol(sym.CLASS, new TokenVal(yyline+1, c));
+	else if (t.equals("static")) S = new Symbol(sym.STATIC, new TokenVal(yyline+1, c));
+	else if (t.equals("int")) S = new Symbol(sym.INT, new TokenVal(yyline+1, c));
+	else if (t.equals("boolean")) S = new Symbol(sym.BOOLEAN, new TokenVal(yyline+1, c));
+	else if (t.equals("String")) S = new Symbol(sym.STRING, new TokenVal(yyline+1, c));
+	else if (t.equals("void")) S = new Symbol(sym.VOID, new TokenVal(yyline+1, c));
+	else if (t.equals("true")) S = new Symbol(sym.TRUE, new TokenVal(yyline+1, c));
+	else if (t.equals("false")) S = new Symbol(sym.FALSE, new TokenVal(yyline+1, c));
+	else if (t.equals("if")) S = new Symbol(sym.IF, new TokenVal(yyline+1, c));
+	else if (t.equals("else")) S = new Symbol(sym.ELSE, new TokenVal(yyline+1, c));
+	else if (t.equals("while")) S = new Symbol(sym.WHILE, new TokenVal(yyline+1, c));
+	else if (t.equals("do")) S = new Symbol(sym.DO, new TokenVal(yyline+1, c));
+	else /* return */ S = new Symbol(sym.RETURN, new TokenVal(yyline+1, c));
+	updateCharNum(yytext());
+	return S;
+}
+
+[A-Za-z][A-Za-z0-9_]* {
+	int c = CharNum.num;
+	String id = yytext();
+	Symbol S = new Symbol(sym.ID, new IdTokenVal(yyline+1, c, id));
+	updateCharNum(id);
+	return S;
+}
+
+// Integer literals with overflow handling
+{DIGIT}+   {
+			int c = CharNum.num;
+			String t = yytext();
+			long lv;
+			try {
+				lv = Long.parseLong(t);
+			} catch (NumberFormatException e) {
+				lv = Long.MAX_VALUE;
+			}
+			int val;
+			if (lv > Integer.MAX_VALUE) {
+				Errors.warn(yyline+1, c, "integer literal too large; value capped to 2147483647");
+				val = Integer.MAX_VALUE;
+			} else {
+				val = (int) lv;
+			}
+			Symbol S = new Symbol(sym.INTLITERAL,
+								  new IntLitTokenVal(yyline+1, c, val)
+								 );
+			updateCharNum(t);
+			return S;
+		   }
+
+// Operators and delimiters (longest match first)
+"&&"   { int c=CharNum.num; Symbol S=new Symbol(sym.AND, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+"||"   { int c=CharNum.num; Symbol S=new Symbol(sym.OR, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+"=="   { int c=CharNum.num; Symbol S=new Symbol(sym.EQUALS, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+"!="   { int c=CharNum.num; Symbol S=new Symbol(sym.NOTEQUALS, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+"<="   { int c=CharNum.num; Symbol S=new Symbol(sym.LESSEQ, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+">="   { int c=CharNum.num; Symbol S=new Symbol(sym.GREATEREQ, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+
+"{"    { int c=CharNum.num; Symbol S=new Symbol(sym.LCURLY, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+"}"    { int c=CharNum.num; Symbol S=new Symbol(sym.RCURLY, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+"("    { int c=CharNum.num; Symbol S=new Symbol(sym.LPAREN, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+")"    { int c=CharNum.num; Symbol S=new Symbol(sym.RPAREN, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+","    { int c=CharNum.num; Symbol S=new Symbol(sym.COMMA, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+";"    { int c=CharNum.num; Symbol S=new Symbol(sym.SEMICOLON, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+"="    { int c=CharNum.num; Symbol S=new Symbol(sym.ASSIGN, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+"<"    { int c=CharNum.num; Symbol S=new Symbol(sym.LESS, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+">"    { int c=CharNum.num; Symbol S=new Symbol(sym.GREATER, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+"!"    { int c=CharNum.num; Symbol S=new Symbol(sym.NOT, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+"+"    { int c=CharNum.num; Symbol S=new Symbol(sym.PLUS, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+"-"    { int c=CharNum.num; Symbol S=new Symbol(sym.MINUS, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+"*"    { int c=CharNum.num; Symbol S=new Symbol(sym.TIMES, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+"/"    { int c=CharNum.num; Symbol S=new Symbol(sym.DIVIDE, new TokenVal(yyline+1,c)); updateCharNum(yytext()); return S; }
+
+// Single '&' or '|' are illegal in this language
+"&"    { Errors.fatal(yyline+1, CharNum.num, "ignoring illegal character: " + yytext()); updateCharNum(yytext()); }
+"|"    { Errors.fatal(yyline+1, CharNum.num, "ignoring illegal character: " + yytext()); updateCharNum(yytext()); }
+
+// Anything else illegal
+.        { Errors.fatal(yyline+1, CharNum.num,
 			 "ignoring illegal character: " + yytext());
-	    CharNum.num++;
-	   }
+			updateCharNum(yytext());
+		   }

@@ -1,0 +1,4 @@
+// single line comment
+x = 1; /* multi-line
+comment with newline */ y = 2;
+/* unterminated comment...

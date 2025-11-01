@@ -1,0 +1,6 @@
+public class A { static int x; boolean t = true; String s = "hi"; }
+System.out.println(x);
+if (t) { x = x + 1; } else { x = x - 1; }
+while (x < 10) do return; // 'do' present
+and | &  // illegal tokens to trigger errors
+case switch default // currently IDs (not in sym.java)
